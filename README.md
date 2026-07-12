@@ -15,6 +15,11 @@ model to trace back *why* something happened.
   logging service.
 - **`tracing`-based.** With the default `tracing-bridge` feature, engines emit via standard
   macros and get a canonical event for free.
+- **Logs and events are one path** (not two systems). A plain progress log is just an
+  `info`/`debug` event with no `code`/`objects`. Filter by severity with `VYGES_LOG=warn`; the
+  *same* event renders as pretty text at a terminal or JSONL when piped — auto (TTY vs pipe), or
+  force with `VYGES_LOG_FORMAT=json|text`. So the machine causal-trail and the human log are the
+  same records, two views.
 
 ## Use it (engine side)
 

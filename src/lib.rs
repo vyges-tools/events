@@ -14,6 +14,8 @@
 //!   canonical event for free.
 
 use serde::{Deserialize, Serialize};
+use std::io::IsTerminal;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The schema version this crate implements.
@@ -37,6 +39,31 @@ pub enum Severity {
     Info,
     Warn,
     Error,
+}
+
+impl Severity {
+    /// Ordering rank (trace=0 … error=4), for level filtering.
+    pub fn rank(self) -> u8 {
+        match self {
+            Severity::Trace => 0,
+            Severity::Debug => 1,
+            Severity::Info => 2,
+            Severity::Warn => 3,
+            Severity::Error => 4,
+        }
+    }
+
+    /// Parse a level name leniently (`warn`/`warning` both accepted).
+    pub fn parse(s: &str) -> Option<Severity> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "trace" => Some(Severity::Trace),
+            "debug" => Some(Severity::Debug),
+            "info" => Some(Severity::Info),
+            "warn" | "warning" => Some(Severity::Warn),
+            "error" | "err" => Some(Severity::Error),
+            _ => None,
+        }
+    }
 }
 
 /// One structured event (`vyges-events/1.0`). Serialized as one JSONL line.
@@ -107,9 +134,22 @@ impl Event {
         self
     }
 
-    /// Serialize to one JSONL line.
+    /// Serialize to one JSONL line (the machine / causal-trail form).
     pub fn to_jsonl(&self) -> String {
         serde_json::to_string(self).unwrap_or_default()
+    }
+
+    /// Render a concise human-readable line (the terminal form) — the *same* event,
+    /// just a different view: `[WARN  vyges-drc DRC-0142] spacing < min  [net:data[3]]`.
+    pub fn to_human(&self) -> String {
+        let sev = format!("{:?}", self.severity).to_uppercase();
+        let code = self.code.as_deref().map(|c| format!(" {c}")).unwrap_or_default();
+        let objs = if self.objects.is_empty() {
+            String::new()
+        } else {
+            format!("  [{}]", self.objects.join(", "))
+        };
+        format!("[{sev:<5} {}{code}] {}{objs}", self.tool, self.raw_msg)
     }
 }
 
@@ -120,10 +160,62 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// Emit an event as one JSONL line to stderr — the canonical local sink. The
-/// orchestrator aggregates per-run (daemonless: no central logging service).
+/// Minimum severity to emit, from `VYGES_LOG` (default `info`). Parsed once.
+/// This is the "log level" knob — the same filter for progress logs and findings.
+fn min_level() -> u8 {
+    static L: OnceLock<u8> = OnceLock::new();
+    *L.get_or_init(|| {
+        std::env::var("VYGES_LOG")
+            .ok()
+            .and_then(|s| Severity::parse(&s))
+            .unwrap_or(Severity::Info)
+            .rank()
+    })
+}
+
+/// Rendering: JSONL (machine / causal trail) or human text (terminal).
+enum Fmt {
+    Json,
+    Text,
+}
+
+/// `VYGES_LOG_FORMAT=json|text` forces it; otherwise auto — **text on a TTY, JSONL when
+/// piped** (i.e. JSONL under MCP/orchestration, pretty for a human at the terminal).
+fn fmt_mode() -> &'static Fmt {
+    static F: OnceLock<Fmt> = OnceLock::new();
+    F.get_or_init(
+        || match std::env::var("VYGES_LOG_FORMAT").ok().as_deref() {
+            Some("json") => Fmt::Json,
+            Some("text") => Fmt::Text,
+            _ => {
+                if std::io::stderr().is_terminal() {
+                    Fmt::Text
+                } else {
+                    Fmt::Json
+                }
+            }
+        },
+    )
+}
+
+/// Emit one event to stderr — the canonical local sink. It is **level-filtered**
+/// (`VYGES_LOG`) and rendered as JSONL or human text (`VYGES_LOG_FORMAT` / TTY). Logs and
+/// events are one path: a plain progress log is just an `info`/`debug` event with no
+/// `code`/`objects`. Daemonless — the orchestrator aggregates per-run.
 pub fn emit(event: &Event) {
-    eprintln!("{}", event.to_jsonl());
+    if event.severity.rank() < min_level() {
+        return;
+    }
+    match fmt_mode() {
+        Fmt::Json => eprintln!("{}", event.to_jsonl()),
+        Fmt::Text => eprintln!("{}", event.to_human()),
+    }
+}
+
+/// Convenience: emit a plain log line (a progress/status event with no `code`/`objects`).
+/// This is the "ordinary logging" entry point — same path, same level filter.
+pub fn log(tool: &str, severity: Severity, msg: impl Into<String>) {
+    emit(&Event::new(tool, severity, msg));
 }
 
 /// A `tracing` bridge so engines emit via standard macros and get canonical JSONL.
@@ -249,5 +341,24 @@ mod tests {
     fn schema_is_valid_json() {
         let v: serde_json::Value = serde_json::from_str(schema()).unwrap();
         assert_eq!(v["title"], "vyges-events/1.0");
+    }
+
+    #[test]
+    fn human_render_reads_cleanly() {
+        let h = Event::new("vyges-drc", Severity::Warn, "width < min")
+            .with_code("DRC-WIDTH")
+            .with_objects(vec!["layer:66".into()])
+            .to_human();
+        for needle in ["WARN", "vyges-drc", "DRC-WIDTH", "layer:66"] {
+            assert!(h.contains(needle), "missing {needle} in {h:?}");
+        }
+    }
+
+    #[test]
+    fn severity_levels_order_and_parse() {
+        assert!(Severity::Error.rank() > Severity::Warn.rank());
+        assert!(Severity::Warn.rank() > Severity::Info.rank());
+        assert_eq!(Severity::parse("warning"), Some(Severity::Warn));
+        assert_eq!(Severity::parse("nonsense"), None);
     }
 }
