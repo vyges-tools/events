@@ -1,0 +1,22 @@
+[package]
+name = "vyges-events"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Canonical structured events (vyges-events/1.0) + a tracing bridge for Vyges loom engines and tools. The event schema is co-located and self-published."
+repository = "https://github.com/vyges-tools/events"
+
+[features]
+default = ["tracing-bridge"]
+# Ergonomic emit path: use standard `tracing::warn!(...)` macros, get canonical JSONL.
+tracing-bridge = ["dep:tracing", "dep:tracing-subscriber"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["registry", "std"], optional = true }
+
+[[bin]]
+name = "vyges-events"
+path = "src/main.rs"

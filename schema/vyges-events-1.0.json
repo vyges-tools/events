@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vyges.com/schema/vyges-events-1.0.json",
+  "title": "vyges-events/1.0",
+  "description": "One structured event emitted by a Vyges loom engine or tool. Newline-delimited JSON (JSONL): one object per line. The `code` and `objects` fields are the cross-stage keys used by root-cause analysis to link an early warning to a late failure.",
+  "type": "object",
+  "required": ["schema", "ts_ms", "tool", "severity", "raw_msg"],
+  "additionalProperties": false,
+  "properties": {
+    "schema":      { "const": "vyges-events/1.0" },
+    "ts_ms":       { "type": "integer", "description": "Unix epoch milliseconds." },
+    "run_id":      { "type": "string", "description": "Orchestration run id (set by the orchestrator / span context)." },
+    "stage":       { "type": "string", "description": "Flow stage (e.g. synthesis, floorplan, route)." },
+    "step_index":  { "type": "integer", "minimum": 0, "description": "Ordinal step within the run." },
+    "tool":        { "type": "string", "description": "Emitting tool/engine (e.g. vyges-drc, vyges-sta-si, openroad)." },
+    "severity":    { "enum": ["trace", "debug", "info", "warn", "error"] },
+    "code":        { "type": "string", "description": "Structured message code (e.g. DRC-0142, ODB-0220). The clustering key." },
+    "msg_template":{ "type": "string", "description": "Message with variable parts masked (e.g. 'net %s undriven')." },
+    "raw_msg":     { "type": "string", "description": "The full human-readable message." },
+    "objects":     { "type": "array", "items": { "type": "string" }, "description": "Design objects named by the message (e.g. net:data[3], macro:sram0). The cross-stage co-reference key." },
+    "file":        { "type": "string", "description": "Source location (path:line) if applicable." }
+  }
+}

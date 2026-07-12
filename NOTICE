@@ -1,0 +1,13 @@
+Vyges Events (vyges-events)
+Copyright 2026 Vyges. All Rights Reserved.
+
+This product is authored by Vyges (https://vyges.com) and licensed under the
+Apache License, Version 2.0 (the "License"). You may obtain a copy of the
+License in the accompanying LICENSE file or at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+vyges-events is the shared producer-side crate for canonical structured events
+(schema vyges-events/1.0) emitted by Vyges loom engines and tools. The event
+schema is co-located and self-published in this crate. Emission is daemonless;
+the orchestrator aggregates per-run.
