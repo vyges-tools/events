@@ -1,6 +1,6 @@
 [package]
 name = "vyges-events"
-version = "0.1.0"
+version = "0.1.37"
 edition = "2021"
 license = "Apache-2.0"
 description = "Canonical structured events (vyges-events/1.0) + a tracing bridge for Vyges loom engines and tools. The event schema is co-located and self-published."
