@@ -42,6 +42,29 @@ emit(&Event::new("vyges-drc", Severity::Warn, "spacing < min")
         .with_objects(vec!["net:data[3]".into()]));
 ```
 
+## Reference-format messages (`vyges_events::logger`)
+
+For an engine whose text log is scored line by line, `Logger` writes each message as
+`[INFO GRT-0001] text` / `[WARNING RSZ-0062] text` / `[DEBUG CTS-tree] text`, with the
+bookkeeping that goes with it:
+
+- each `TOOL-NNNN` code prints at most 1000 times, then one `message limit (1000) reached`
+  line, then nothing; `suppress` / `unsuppress` per code;
+- warnings and errors are counted even when they do not print; `summary()` gives the totals
+  and a count per warning code (also as `flow__warnings__*` metric pairs);
+- debug groups per tool + group + level, built only when they print;
+- `report` for plain text; `error` / `critical` stop the run with their code;
+- the lines are kept in order (`lines`, `take_lines`) for tests and comparison, and can be
+  echoed to stdout and emitted as events (`echo`, `events`).
+
+```rust
+use vyges_events::logger::Logger;
+let mut log = Logger::new().echo(true).events("vyges-grt");
+log.info("GRT", 1, "Min routing layer: met1");
+log.set_debug_level("GRT", "maze", 1);
+log.debug("GRT", "maze", 1, || format!("net {} rerouted", "n1"));
+```
+
 ## The event (`vyges-events/1.0`)
 
 ```jsonc

@@ -18,6 +18,8 @@ use std::io::IsTerminal;
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub mod logger;
+
 /// The schema version this crate implements.
 pub const SCHEMA_VERSION: &str = "vyges-events/1.0";
 
