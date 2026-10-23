@@ -84,7 +84,7 @@ pub struct Event {
     /// Ordinal step within the run.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step_index: Option<u32>,
-    /// Emitting tool/engine (vyges-drc, vyges-sta-si, openroad, …).
+    /// Emitting tool/engine (vyges-drc, vyges-sta-si, an external tool, …).
     pub tool: String,
     /// Severity.
     pub severity: Severity,

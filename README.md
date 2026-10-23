@@ -87,7 +87,7 @@ vyges-events --schema        # dumps schema/vyges-events-1.0.json
 
 - **Producer:** loom engines depend on this crate to emit.
 - **Consumer:** `vyges-cli` (MCP `invoke`) depends on it for the types and does streaming +
-  per-run aggregation + external-tool (OpenROAD) normalization into the same schema.
+  per-run aggregation + external-tool normalization into the same schema.
 - **Root-cause:** `soc-generator` / Sley (Python) reads the emitted JSONL against the published
   schema. See `soc-generator/docs/architecture/flow-log-root-cause-analysis.md`.
 
