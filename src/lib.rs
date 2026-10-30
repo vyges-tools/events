@@ -143,14 +143,28 @@ impl Event {
 
     /// Render a concise human-readable line (the terminal form) — the *same* event,
     /// just a different view: `[WARN  vyges-drc DRC-0142] spacing < min  [net:data[3]]`.
+    ///
+    /// An event carrying a REFERENCE code (`TOOL-NNNN`, [`logger::parse_code`]) renders as the
+    /// reference's logger writes that message, `[WARNING GRT-0012] text`, so a flow's text log
+    /// reads, and diffs, like the reference's. Our own codes (`DRC-WIDTH`, `RSZ-DONE`) keep the
+    /// tool-named form above.
     pub fn to_human(&self) -> String {
-        let sev = format!("{:?}", self.severity).to_uppercase();
-        let code = self.code.as_deref().map(|c| format!(" {c}")).unwrap_or_default();
         let objs = if self.objects.is_empty() {
             String::new()
         } else {
             format!("  [{}]", self.objects.join(", "))
         };
+        if let Some(code) = self.code.as_deref().filter(|c| logger::parse_code(c).is_some()) {
+            let level = match self.severity {
+                Severity::Trace | Severity::Debug => "DEBUG",
+                Severity::Info => "INFO",
+                Severity::Warn => "WARNING",
+                Severity::Error => "ERROR",
+            };
+            return format!("[{level} {code}] {}{objs}", self.raw_msg);
+        }
+        let sev = format!("{:?}", self.severity).to_uppercase();
+        let code = self.code.as_deref().map(|c| format!(" {c}")).unwrap_or_default();
         format!("[{sev:<5} {}{code}] {}{objs}", self.tool, self.raw_msg)
     }
 }
@@ -198,6 +212,14 @@ fn fmt_mode() -> &'static Fmt {
             }
         },
     )
+}
+
+/// Whether [`emit`] renders text (a terminal, or `VYGES_LOG_FORMAT=text`) rather than JSONL. A
+/// line an engine prints itself is, in text, already that message's terminal form: emitting its
+/// event as well would print the message twice ([`logger::Logger`] and a hand-written reference
+/// line both ask this).
+pub fn text_mode() -> bool {
+    matches!(fmt_mode(), Fmt::Text)
 }
 
 /// Emit one event to stderr — the canonical local sink. It is **level-filtered**
@@ -354,6 +376,17 @@ mod tests {
         for needle in ["WARN", "vyges-drc", "DRC-WIDTH", "layer:66"] {
             assert!(h.contains(needle), "missing {needle} in {h:?}");
         }
+    }
+
+    #[test]
+    fn a_reference_code_renders_as_the_reference_line() {
+        let ev = |sev, code: &str| Event::new("vyges-grt", sev, "Found 375 antenna violations.").with_code(code).to_human();
+        assert_eq!(ev(Severity::Info, "GRT-0012"), "[INFO GRT-0012] Found 375 antenna violations.");
+        assert_eq!(ev(Severity::Warn, "GRT-0012"), "[WARNING GRT-0012] Found 375 antenna violations.");
+        assert_eq!(ev(Severity::Error, "GRT-0012"), "[ERROR GRT-0012] Found 375 antenna violations.");
+        // Our own codes are not the reference's: they keep the tool-named form.
+        assert_eq!(ev(Severity::Info, "GRT-DONE"), "[INFO  vyges-grt GRT-DONE] Found 375 antenna violations.");
+        assert_eq!(ev(Severity::Info, "GRT-12"), "[INFO  vyges-grt GRT-12] Found 375 antenna violations.");
     }
 
     #[test]

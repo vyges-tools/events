@@ -121,7 +121,8 @@ struct Counter {
 
 /// The reference-format logger. Lines are kept in order ([`Logger::lines`]); with
 /// [`Logger::echo`] each is also printed to stdout, and with [`Logger::events`] each message
-/// is also emitted as an event.
+/// is also emitted as an event — in JSONL only ([`crate::text_mode`]): in text the engine prints
+/// the line itself, and that line is the message's one terminal form.
 #[derive(Debug, Default)]
 pub struct Logger {
     lines: Vec<String>,
@@ -130,6 +131,7 @@ pub struct Logger {
     warnings: u32,
     errors: u32,
     echo: bool,
+    stderr: bool,
     events: Option<String>,
 }
 
@@ -141,6 +143,13 @@ impl Logger {
     /// Also print each line to stdout as it is written.
     pub fn echo(mut self, on: bool) -> Self {
         self.echo = on;
+        self
+    }
+
+    /// Also print each line to stderr as it is written — for an engine that keeps its lines for its
+    /// report rather than printing them itself, so a flow's log still shows every message once.
+    pub fn stderr(mut self, on: bool) -> Self {
+        self.stderr = on;
         self
     }
 
@@ -174,11 +183,19 @@ impl Logger {
             if self.echo {
                 println!("{line}");
             }
+            if self.stderr {
+                eprintln!("{line}");
+            }
             self.lines.push(line.to_string());
         }
     }
 
     fn event(&self, level: Level, code: Option<String>, text: &str) {
+        // In text the engine's printed line IS this message's terminal form; the event as well would
+        // print it twice. JSONL (piped, the gates, MCP) still gets every event.
+        if crate::text_mode() {
+            return;
+        }
         if let Some(tool) = &self.events {
             let mut ev = Event::new(tool.clone(), level.severity(), text);
             ev.code = code;
