@@ -1,5 +1,7 @@
 # vyges-events
 
+**[Download Loom](https://vyges.com/products/vyges-cli/#install)** · install the free [Vyges CLI](https://vyges.com/products/vyges-cli/), then `vyges install loom`
+
 Canonical **structured events** for Vyges loom engines and tools — the shared *producer*
 side of the logging/event contract (`vyges-events/1.0`). It exists so that in LLM-driven
 MCP orchestration there is a uniform, queryable **causal trail** to debug with and for the
