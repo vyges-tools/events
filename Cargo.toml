@@ -7,9 +7,13 @@ description = "Canonical structured events (vyges-events/1.0) + a tracing bridge
 repository = "https://github.com/vyges-tools/events"
 
 [features]
-default = ["tracing-bridge"]
+default = ["tracing-bridge", "mimalloc"]
 # Ergonomic emit path: use standard `tracing::warn!(...)` macros, get canonical JSONL.
 tracing-bridge = ["dep:tracing", "dep:tracing-subscriber"]
+
+# The binary's allocator (see [dependencies]). On by default for the binary; the suite, the only
+# library consumer, links it too.
+mimalloc = ["dep:mimalloc", "dep:libmimalloc-sys"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -17,6 +21,25 @@ serde_json = "1"
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["registry", "std"], optional = true }
 
+# The binary's global allocator. The reference build links tcmalloc for all of its code
+# (BUILD.bazel `malloc = @tcmalloc`), not the system allocator; mimalloc measured fastest and
+# smallest of tcmalloc / jemalloc / mimalloc on a like-for-like trial. Pinned exactly:
+# libmimalloc-sys 0.1.44 bundles mimalloc v2 by default (0.1.45 on default to v3).
+mimalloc = { version = "=0.1.48", default-features = false, optional = true }
+libmimalloc-sys = { version = "=0.1.44", default-features = false, optional = true }
+
+# On Linux the allocator also REPLACES malloc/free process-wide (`override`), so C++ code linked
+# into the binary allocates through it too, as the reference's statically linked tcmalloc does for
+# all of its code. Not on macOS, where the system zone allocator is left alone.
+[target.'cfg(target_os = "linux")'.dependencies]
+libmimalloc-sys = { version = "=0.1.44", default-features = false, features = ["override"], optional = true }
+
 [[bin]]
 name = "vyges-events"
 path = "src/main.rs"
+
+# The reference is built -O3 with link-time optimisation (Bazel --config=release). LTO and one
+# codegen unit let calls inline across crates; by language rule neither changes a result.
+[profile.release]
+lto = "fat"
+codegen-units = 1
