@@ -13,11 +13,14 @@
 //!   its count to zero, so it prints again (and can reach the limit again).
 //! - A warning or an error is counted even when it does not print (limited or suppressed).
 //! - A debug line prints when its tool+group level is at least the line's level; a level of 0
-//!   removes the group. Debug lines have no limit and are not counted.
+//!   removes the group. Debug lines have no limit and are not counted. A new logger starts from
+//!   `VYGES_DEBUG` (and any registered aliases, [`crate::debug`]); `set_debug_level` applies
+//!   after it. Tool names match case-insensitively; group `*` covers every group of a tool.
 //! - A report is the text alone: no prefix, no limit, no count.
 //! - [`Logger::summary`] lists, per code that was last logged as a warning and has a nonzero
 //!   count, that count — in tool-then-id order — plus the totals.
 
+use crate::debug::{env_debug_specs, DebugLevels};
 use crate::{emit, Event, Severity};
 use std::collections::BTreeMap;
 
@@ -123,11 +126,11 @@ struct Counter {
 /// [`Logger::echo`] each is also printed to stdout, and with [`Logger::events`] each message
 /// is also emitted as an event — in JSONL only ([`crate::text_mode`]): in text the engine prints
 /// the line itself, and that line is the message's one terminal form.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Logger {
     lines: Vec<String>,
     counters: BTreeMap<(String, u16), Counter>,
-    debug: BTreeMap<(String, String), i32>,
+    debug: DebugLevels,
     warnings: u32,
     errors: u32,
     echo: bool,
@@ -135,9 +138,32 @@ pub struct Logger {
     events: Option<String>,
 }
 
+impl Default for Logger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Logger {
+    /// A logger whose debug levels start from `VYGES_DEBUG` and the registered aliases.
     pub fn new() -> Self {
-        Self::default()
+        let mut l = Self::without_env();
+        l.debug.apply(&env_debug_specs());
+        l
+    }
+
+    /// A logger that ignores `VYGES_DEBUG`: no debug group is on until `set_debug_level`.
+    pub fn without_env() -> Self {
+        Logger {
+            lines: Vec::new(),
+            counters: BTreeMap::new(),
+            debug: DebugLevels::new(),
+            warnings: 0,
+            errors: 0,
+            echo: false,
+            stderr: false,
+            events: None,
+        }
     }
 
     /// Also print each line to stdout as it is written.
@@ -263,20 +289,16 @@ impl Logger {
         self.counters.entry((tool.to_string(), id)).or_insert(Counter { count: 0, level: None }).count = 0;
     }
 
-    /// `set_debug_level tool group level`; a level of 0 removes the group.
+    /// `set_debug_level tool group level`; a level of 0 removes the group (`*`: every group of
+    /// the tool not set by name).
     pub fn set_debug_level(&mut self, tool: &str, group: &str, level: i32) {
-        let key = (tool.to_string(), group.to_string());
-        if level == 0 {
-            self.debug.remove(&key);
-        } else {
-            self.debug.insert(key, level);
-        }
+        self.debug.set(tool, group, level);
     }
 
     /// Whether a debug line of `level` for this tool and group prints. Check it before building
     /// an expensive message, or use [`Logger::debug`], which only builds it when it prints.
     pub fn debug_on(&self, tool: &str, group: &str, level: i32) -> bool {
-        self.debug.get(&(tool.to_string(), group.to_string())).is_some_and(|&l| level <= l)
+        self.debug.on(tool, group, level)
     }
 
     /// `[DEBUG TOOL-group] text`, when the group's level is at least `level`.
@@ -306,7 +328,7 @@ mod tests {
 
     #[test]
     fn lines_carry_level_tool_and_four_digit_id() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         l.info("GRT", 1, "Min routing layer: met1");
         l.warn("RSZ", 62, "Unable to repair");
         l.report("plain text");
@@ -315,14 +337,14 @@ mod tests {
 
     #[test]
     fn a_message_with_newlines_is_one_line_per_text_line() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         l.info("CTS", 5, "a\nb");
         assert_eq!(l.lines(), ["[INFO CTS-0005] a", "b"]);
     }
 
     #[test]
     fn a_code_prints_up_to_the_limit_then_one_limit_line_then_nothing() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         for _ in 0..MAX_MESSAGE_PRINT + 5 {
             l.warn("ODB", 92, "x");
         }
@@ -336,7 +358,7 @@ mod tests {
 
     #[test]
     fn the_limit_is_per_code() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         for _ in 0..MAX_MESSAGE_PRINT {
             l.info("DPL", 1, "a");
         }
@@ -349,7 +371,7 @@ mod tests {
 
     #[test]
     fn suppress_silences_without_the_limit_line_and_still_counts() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         l.suppress("GRT", 97);
         l.warn("GRT", 97, "x");
         l.warn("GRT", 97, "x");
@@ -363,7 +385,7 @@ mod tests {
 
     #[test]
     fn a_warning_code_unsuppressed_back_to_zero_is_not_in_the_summary() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         l.warn("GRT", 97, "x");
         l.unsuppress("GRT", 97);
         assert!(l.summary().warning_codes.is_empty());
@@ -372,14 +394,14 @@ mod tests {
 
     #[test]
     fn a_suppressed_code_never_logged_is_not_in_the_summary() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         l.suppress("GRT", 97);
         assert!(l.summary().warning_codes.is_empty());
     }
 
     #[test]
     fn the_summary_lists_codes_last_logged_as_warnings_in_tool_then_id_order() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         l.warn("RSZ", 2, "b");
         l.warn("GRT", 9, "a");
         l.warn("GRT", 3, "a");
@@ -396,7 +418,7 @@ mod tests {
 
     #[test]
     fn error_counts_writes_and_stops_critical_does_not_count() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         let e: Result<(), _> = l.error("PDN", 175, "no grid");
         assert_eq!(e.unwrap_err().to_string(), "PDN-0175");
         let c: Result<(), _> = l.critical("ODB", 1, "fatal");
@@ -407,7 +429,7 @@ mod tests {
 
     #[test]
     fn debug_prints_at_or_below_the_group_level_and_zero_removes_it() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         let mut built = 0;
         l.debug("CTS", "tree", 1, || {
             built += 1;
@@ -426,8 +448,30 @@ mod tests {
     }
 
     #[test]
+    fn env_debug_specs_apply_first_and_set_debug_level_after() {
+        // What `new()` does with a `VYGES_DEBUG=cts:*=1,cts:tree=2` (tested on the parsed form,
+        // so no test touches the process environment).
+        let mut l = Logger::without_env();
+        l.debug.apply(&crate::debug::parse_debug_spec("cts:*=1,cts:tree=2").specs);
+        let mut built = 0;
+        l.debug("CTS", "tree", 3, || {
+            built += 1;
+            "off".into()
+        });
+        assert_eq!(built, 0, "an off group does not build its message");
+        l.debug("CTS", "tree", 2, || "tree".into());
+        l.debug("CTS", "clusters", 1, || "wildcard".into());
+        l.debug("CTS", "clusters", 2, || "too deep".into());
+        l.set_debug_level("CTS", "tree", 0);
+        l.debug("CTS", "tree", 1, || "wildcard again".into());
+        l.set_debug_level("CTS", "*", 0);
+        l.debug("CTS", "tree", 1, || "all off".into());
+        assert_eq!(l.lines(), ["[DEBUG CTS-tree] tree", "[DEBUG CTS-clusters] wildcard", "[DEBUG CTS-tree] wildcard again"]);
+    }
+
+    #[test]
     fn take_lines_captures_between_two_points() {
-        let mut l = Logger::new();
+        let mut l = Logger::without_env();
         l.info("TAP", 1, "a");
         assert_eq!(l.take_lines(), ["[INFO TAP-0001] a"]);
         l.info("TAP", 2, "b");
@@ -446,6 +490,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "over 9999")]
     fn an_id_over_the_maximum_is_refused() {
-        Logger::new().info("GRT", 10000, "x");
+        Logger::without_env().info("GRT", 10000, "x");
     }
 }

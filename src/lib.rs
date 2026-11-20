@@ -12,13 +12,32 @@
 //! - With the default `tracing-bridge` feature, engines emit via standard
 //!   `tracing::warn!(code = "DRC-0142", objects = ?objs, "spacing < min")` and get a
 //!   canonical event for free.
+//!
+//! ## Debug flags
+//!
+//! One set of environment variables across the engines (all off by default; with none set,
+//! output is unchanged):
+//!
+//! - `VYGES_DEBUG=<tool>:<group>=<level>[,...]` turns on debug groups, as the reference's
+//!   `set_debug_level <tool> <group> <level>`; `<group>` may be `*`. Applied to every
+//!   [`logger::Logger`] when it is built; the engine's own `set_debug_level` applies after it.
+//!   Each engine lists its groups in a [`DebugGroup`] table shown by `--describe`; an unknown
+//!   group or a malformed entry is a warning. See [`debug`].
+//! - `VYGES_STAGE_TIMES=1`: one line per engine stage with wall time, CPU time, RSS and peak
+//!   RSS. See [`stage`](mod@stage).
+//! - `VYGES_DEBUG_DIR=<dir>`: large traces and dumps go to `<dir>/<tool>/` ([`debug_dir`]).
 
 use serde::{Deserialize, Serialize};
 use std::io::IsTerminal;
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub mod debug;
 pub mod logger;
+pub mod stage;
+
+pub use debug::{debug_dir, DebugGroup};
+pub use stage::stage;
 
 /// The schema version this crate implements.
 pub const SCHEMA_VERSION: &str = "vyges-events/1.0";

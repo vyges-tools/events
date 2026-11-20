@@ -31,8 +31,25 @@ libmimalloc-sys = { version = "=0.1.44", default-features = false, optional = tr
 # On Linux the allocator also REPLACES malloc/free process-wide (`override`), so C++ code linked
 # into the binary allocates through it too, as the reference's statically linked tcmalloc does for
 # all of its code. Not on macOS, where the system zone allocator is left alone.
+# getrusage for the per-stage CPU and peak-RSS line (`VYGES_STAGE_TIMES`).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 libmimalloc-sys = { version = "=0.1.44", default-features = false, features = ["override"], optional = true }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"
+ptr_arg = "warn"
+borrowed_box = "warn"
+len_without_is_empty = "warn"
+new_without_default = "warn"
+wrong_self_convention = "warn"
+should_implement_trait = "warn"
+type_complexity = "allow"
 
 [[bin]]
 name = "vyges-events"

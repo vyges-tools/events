@@ -65,6 +65,54 @@ log.set_debug_level("GRT", "maze", 1);
 log.debug("GRT", "maze", 1, || format!("net {} rerouted", "n1"));
 ```
 
+## Debug flags
+
+One set of environment variables for every engine. All are off by default; with none of them
+set, an engine's output is unchanged.
+
+| variable | effect |
+| --- | --- |
+| `VYGES_DEBUG=<tool>:<group>=<level>[,...]` | turn on debug groups, as `set_debug_level <tool> <group> <level>`; `<group>` may be `*` |
+| `VYGES_STAGE_TIMES=1` | one line per engine stage: wall time, CPU time, RSS at the end, peak RSS |
+| `VYGES_DEBUG_DIR=<dir>` | large traces and dumps go to `<dir>/<tool>/` |
+
+`VYGES_DEBUG` (e.g. `VYGES_DEBUG=grt:incr=1,sta:*=2`) is parsed once and applied to every
+`Logger` when it is built; the engine's own `set_debug_level` (Tcl or job file) applies after
+it. Tool names match in any case; group names exactly. A group's own level wins over its tool's
+`*`. A malformed entry is skipped with one warning; the rest apply. A disabled group costs one
+lookup: the message closure is not called.
+
+```rust
+use vyges_events::debug::{warn_unknown_debug_groups, render_debug_groups, DebugGroup};
+
+/// The engine's groups, named after the reference's debug groups where one exists, else `vy_`.
+const DEBUG_GROUPS: &[DebugGroup] = &[
+    DebugGroup { group: "incr", max_level: 2, what: "incremental reroute", reference: Some("GRT incr") },
+    DebugGroup { group: "vy_cost", max_level: 1, what: "edge costs per net", reference: None },
+];
+
+warn_unknown_debug_groups("grt", DEBUG_GROUPS);        // at start-up: an unknown group warns
+print!("{}", render_debug_groups("grt", DEBUG_GROUPS)); // in --describe (JSON: describe_debug_groups)
+
+let mut log = Logger::new();                            // VYGES_DEBUG already applied
+log.debug("grt", "incr", 1, || format!("net {name} ({id}) rerouted"));
+
+let _s = vyges_events::stage("find_delays");            // reports when dropped
+if let Some(dir) = vyges_events::debug_dir("grt") { /* write a dump there, log its path */ }
+```
+
+The stage line is an `info` event with code `VYGES-STAGE` and its `stage` field set:
+`stage=find_delays wall_s=1.234 cpu_s=2.345 rss_mib=120.5 hwm_mib=310.2`. CPU is the whole
+process (all threads), user plus system. `hwm_mib` is the process's peak resident set so far,
+not reset per stage. On macOS there is no current-RSS counter: the line shows `rss_mib=n/a`,
+takes the peak from `getrusage`, and says so. When `VYGES_STAGE_TIMES` is off, `stage` returns
+before reading any clock or counter.
+
+Old per-engine variables keep working while engines migrate: `register_alias("OLD_VAR", tool,
+group, level)` turns the group on when the old variable is set and logs a deprecation note once.
+Register aliases at the start of `main`, before building a `Logger`. `debug_enabled(tool, group,
+level)` answers the same question for code without a `Logger`.
+
 ## The event (`vyges-events/1.0`)
 
 ```jsonc
